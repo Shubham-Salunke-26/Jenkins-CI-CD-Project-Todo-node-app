@@ -12,7 +12,8 @@
     "start": "node app.js",
     "test": "mocha --recursive --exit",
     "sonar": "sonar-scanner",
-    "lint": "eslint ."
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix"
   },
   "author": "riaan@entersekt.com",
   "description": "Basic to do list exercise",
