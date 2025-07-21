@@ -1,4 +1,3 @@
-// eslint.config.js
 const globals = require("globals");
 const js = require("@eslint/js");
 
@@ -11,7 +10,7 @@ module.exports = [
       sourceType: "script",
       globals: {
         ...globals.node,
-        ...globals.es2021,
+        ...globals.mocha,   // Add Mocha test globals (describe, it, etc.)
       },
     },
     rules: {
