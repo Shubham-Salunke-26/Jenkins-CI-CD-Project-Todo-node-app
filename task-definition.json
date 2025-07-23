@@ -5,7 +5,7 @@
   "containerDefinitions": [
     {
       "name": "todo-app-container",
-      "image": "981526069311.dkr.ecr.us-east-1.amazonaws.com/todo-app:latest",
+      "image": "981526069311.dkr.ecr.us-east-1.amazonaws.com/todo-app:8be02d5164f6f8ff4034df74e8dc1e75bdb3964f",
       "essential": true,
       "portMappings": [
         {
