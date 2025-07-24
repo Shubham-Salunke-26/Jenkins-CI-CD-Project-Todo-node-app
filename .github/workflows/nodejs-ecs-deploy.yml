@@ -127,6 +127,23 @@ jobs:
           aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query "services[0].deployments[0].status" --output text
           echo "Deployment verification completed"
 
+      - name: Get application URL
+        run: |
+          echo "Waiting for task to start..."
+          sleep 30
+          
+          TASK_ARN=$(aws ecs list-tasks --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --query 'taskArns[0]' --output text)
+          echo "Task ARN: $TASK_ARN"
+          
+          NETWORK_INTERFACE=$(aws ecs describe-tasks --cluster ${{ env.ECS_CLUSTER }} --tasks $TASK_ARN --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text)
+          echo "Network Interface: $NETWORK_INTERFACE"
+          
+          PUBLIC_IP=$(aws ec2 describe-network-interfaces --network-interface-ids $NETWORK_INTERFACE --query 'NetworkInterfaces[0].Association.PublicIp' --output text)
+          echo "Public IP: $PUBLIC_IP"
+          
+          echo "Your application is available at: http://$PUBLIC_IP:8000"
+
+          
 # ===================================================
 # WORKFLOW SUMMARY
 # ===================================================
