@@ -11,8 +11,8 @@ name: Deploy to Amazon ECS
 # WORKFLOW TRIGGERS
 # ===================================================
 on:
-  push:
-    branches: [ master ]
+  # push:
+  #   branches: [ master ]
   
   # Allow manual triggering
   workflow_dispatch:
