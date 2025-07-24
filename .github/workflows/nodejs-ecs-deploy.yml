@@ -2,7 +2,7 @@
 # NODE.JS TODO APP - AWS ECS DEPLOYMENT WORKFLOW
 # ===================================================
 # This workflow demonstrates how to deploy a Node.js application
-# to Amazon ECS using GitHub Actions
+# to Amazon ECS using GitHub Actions with complete CI/CD automation
 # ===================================================
 
 name: Deploy to Amazon ECS
@@ -11,10 +11,13 @@ name: Deploy to Amazon ECS
 # WORKFLOW TRIGGERS
 # ===================================================
 on:
-  # push:
-  #   branches: [ master ]
+  # LEARNING POINT: Trigger on push to master branch
+  # This ensures deployment happens automatically when code is merged
+  push:
+    branches: [ master ]
   
-  # Allow manual triggering
+  # LEARNING POINT: Manual workflow dispatch
+  # This allows developers to trigger deployments manually from GitHub UI
   workflow_dispatch:
     inputs:
       environment:
@@ -29,21 +32,24 @@ on:
 # ===================================================
 # ENVIRONMENT VARIABLES
 # ===================================================
+# LEARNING POINT: Environment variables for reusability
+# These variables make the workflow configurable and reusable across different projects
 env:
-  AWS_REGION: us-east-1                   # Set this to your preferred AWS region
-  ECR_REPOSITORY: todo-app                # Set this to your Amazon ECR repository name
-  ECS_SERVICE: todo-app-service           # Set this to your Amazon ECS service name
-  ECS_CLUSTER: todo-app-cluster           # Set this to your Amazon ECS cluster name
-  ECS_TASK_DEFINITION: task-definition.json # Path to your task definition file
-  CONTAINER_NAME: todo-app-container      # Container name in the task definition
+  AWS_REGION: us-east-1                   # AWS region where resources are deployed
+  ECR_REPOSITORY: todo-app                # ECR repository name for storing Docker images
+  ECS_SERVICE: todo-app-service           # ECS service name that manages running tasks
+  ECS_CLUSTER: todo-app-cluster           # ECS cluster that hosts the service
+  ECS_TASK_DEFINITION: task-definition.json # Task definition file path in repository
+  CONTAINER_NAME: todo-app-container      # Container name defined in task definition
 
 # ===================================================
 # PERMISSIONS
 # ===================================================
 # LEARNING POINT: GitHub Actions permissions
-# This section defines what permissions the GITHUB_TOKEN has
+# This section defines what permissions the automatically provided GITHUB_TOKEN has
+# 'contents: read' allows the workflow to checkout and read repository files
 permissions:
-  contents: read # Permission to checkout the repository
+  contents: read
 
 # ===================================================
 # WORKFLOW JOBS
@@ -55,17 +61,22 @@ jobs:
   deploy:
     name: Deploy to ECS
     runs-on: ubuntu-latest
+    
     # LEARNING POINT: GitHub Environments
-    # This provides environment-specific secrets and protection rules
+    # Environments provide deployment protection rules, secrets, and approval workflows
+    # This ensures sensitive deployments require proper authorization
     environment: production
     
     steps:
-      # LEARNING POINT: Checkout the repository code
+      # LEARNING POINT: Checkout repository code
+      # This is typically the first step - it downloads the repository content
+      # to the GitHub Actions runner so we can access our files
       - name: Checkout
         uses: actions/checkout@v4
 
-      # LEARNING POINT: Configure AWS credentials
-      # This step sets up authentication with AWS
+      # LEARNING POINT: AWS Authentication
+      # This step configures AWS credentials for subsequent AWS CLI commands
+      # Uses repository secrets to securely authenticate with AWS services
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -73,34 +84,43 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # LEARNING POINT: Login to Amazon ECR
-      # This authenticates Docker with Amazon's container registry
+      # LEARNING POINT: ECR Authentication
+      # Amazon ECR requires Docker to authenticate before pushing images
+      # This action handles the complex ECR login process automatically
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      # LEARNING POINT: Build, tag, and push image to Amazon ECR
-      # This builds the Docker image and pushes it to ECR
+      # LEARNING POINT: Docker Build and Push Process
+      # This step demonstrates the complete container image lifecycle:
+      # 1. Build the Docker image using the Dockerfile in the repository
+      # 2. Tag it with the commit SHA for version tracking
+      # 3. Push it to ECR for deployment
       - name: Build, tag, and push image to Amazon ECR
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: ${{ github.sha }}  # Using commit SHA ensures unique tags
         run: |
-          # Build a docker container and push it to ECR
-          echo "Building Docker image..."
+          # Build Docker image with ECR registry URL and commit SHA tag
+          echo "Building Docker image with tag: $IMAGE_TAG"
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           
-          echo "Pushing image to ECR..."
+          # Push the built image to Amazon ECR
+          echo "Pushing image to ECR repository: $ECR_REPOSITORY"
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           
-          # Store the image URI for use in the next step
+          # LEARNING POINT: GitHub Actions Output Variables
+          # This stores the complete image URI for use in subsequent steps
+          # Other steps can reference this using: steps.build-image.outputs.image
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
           
-          echo "Image successfully built and pushed to ECR"
+          echo "✅ Image successfully built and pushed to ECR"
 
-      # LEARNING POINT: Fill in the new image ID in the Amazon ECS task definition
-      # This updates the task definition with the new image URI
+      # LEARNING POINT: Task Definition Update Process
+      # ECS task definitions are immutable - you can't modify them directly
+      # This action creates a new task definition revision with the updated image URI
+      # while keeping all other configuration the same
       - name: Fill in the new image ID in the Amazon ECS task definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -109,48 +129,97 @@ jobs:
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ steps.build-image.outputs.image }}
 
-      # LEARNING POINT: Deploy Amazon ECS task definition
-      # This updates the ECS service with the new task definition
+      # LEARNING POINT: ECS Service Deployment
+      # This step updates the ECS service to use the new task definition
+      # ECS will perform a rolling deployment, gradually replacing old tasks with new ones
+      # wait-for-service-stability ensures the workflow waits until deployment completes
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
+          wait-for-service-stability: true # Waits ~3 minutes for deployment to stabilize
 
-      # LEARNING POINT: Post-deployment verification
-      # This step verifies that the deployment was successful
+      # LEARNING POINT: Post-Deployment Verification
+      # Always verify that your deployment was successful
+      # This step checks the deployment status using AWS CLI
       - name: Verify deployment
         run: |
-          echo "Verifying deployment..."
-          aws ecs describe-services --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE }} --query "services[0].deployments[0].status" --output text
-          echo "Deployment verification completed"
+          echo "🔍 Verifying deployment status..."
+          DEPLOYMENT_STATUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query "services[0].deployments[0].status" \
+            --output text)
+          
+          echo "Deployment status: $DEPLOYMENT_STATUS"
+          
+          if [ "$DEPLOYMENT_STATUS" = "PRIMARY" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment may have issues. Check ECS console for details."
+          fi
 
+      # LEARNING POINT: Application URL Discovery
+      # In ECS Fargate, tasks get dynamic public IPs
+      # This step demonstrates how to programmatically find your application's URL
       - name: Get application URL
         run: |
-          echo "Waiting for task to start..."
-          sleep 30
+          echo "🔍 Finding application URL..."
+          echo "Waiting for task to fully start..."
+          sleep 30  # Give the task time to start and register
           
-          TASK_ARN=$(aws ecs list-tasks --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE }} --query 'taskArns[0]' --output text)
-          echo "Task ARN: $TASK_ARN"
+          # Get the ARN of the running task
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --query 'taskArns[0]' \
+            --output text)
           
-          NETWORK_INTERFACE=$(aws ecs describe-tasks --cluster ${{ env.ECS_CLUSTER }} --tasks $TASK_ARN --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text)
-          echo "Network Interface: $NETWORK_INTERFACE"
+          echo "📋 Task ARN: $TASK_ARN"
           
-          PUBLIC_IP=$(aws ec2 describe-network-interfaces --network-interface-ids $NETWORK_INTERFACE --query 'NetworkInterfaces[0].Association.PublicIp' --output text)
-          echo "Public IP: $PUBLIC_IP"
+          # Extract the network interface ID from the task
+          NETWORK_INTERFACE=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks $TASK_ARN \
+            --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' \
+            --output text)
           
-          echo "Your application is available at: http://$PUBLIC_IP:8000"
+          echo "🌐 Network Interface: $NETWORK_INTERFACE"
+          
+          # Get the public IP address from the network interface
+          PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+            --network-interface-ids $NETWORK_INTERFACE \
+            --query 'NetworkInterfaces[0].Association.PublicIp' \
+            --output text)
+          
+          echo "🌍 Public IP: $PUBLIC_IP"
+          echo ""
+          echo "🚀 Your application is available at: http://$PUBLIC_IP:8000"
+          echo "📝 Save this URL to access your deployed application!"
 
-          
 # ===================================================
-# WORKFLOW SUMMARY
+# WORKFLOW SUMMARY & LEARNING OUTCOMES
 # ===================================================
-# This workflow demonstrates:
-# 1. Authenticating with AWS
-# 2. Building and pushing Docker images to Amazon ECR
-# 3. Updating ECS task definitions with new image URIs
-# 4. Deploying to Amazon ECS services
-# 5. Verifying deployment status
+# This workflow demonstrates key DevOps and CI/CD concepts:
+# 
+# 1. 🔐 SECURITY: Secure AWS authentication using GitHub secrets
+# 2. 🐳 CONTAINERIZATION: Building and managing Docker images
+# 3. 📦 REGISTRY: Using Amazon ECR as a container registry
+# 4. 🚀 DEPLOYMENT: Automated deployment to Amazon ECS
+# 5. 📊 MONITORING: Post-deployment verification and URL discovery
+# 6. 🔄 AUTOMATION: Complete CI/CD pipeline triggered by code changes
+# 
+# Key AWS Services Used:
+# - Amazon ECR: Container image registry
+# - Amazon ECS: Container orchestration service
+# - AWS Fargate: Serverless container compute
+# - Amazon VPC: Network isolation and security
+# 
+# GitHub Actions Features Demonstrated:
+# - Environment variables and secrets management
+# - Step outputs and inter-step communication
+# - Official AWS actions integration
+# - Manual workflow dispatch with inputs
 # ===================================================
