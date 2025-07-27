@@ -7,7 +7,7 @@
 -  Git and GitHub
 -  Docker
 -  Docker-compose
--  Jenkins CI/CD
+-  Jenkins (CI/CD)
 -  SonarQube
 -  OWASP
 -  Trivy 
